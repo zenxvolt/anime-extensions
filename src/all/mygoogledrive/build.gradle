@@ -1,5 +1,5 @@
 ext {
-    extName = 'My Google Drive Anime'
+    extName = 'Google Drive'
     extClass = '.MyGoogleDriveAnime'
     extVersionCode = 1
 }

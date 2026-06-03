@@ -25,7 +25,7 @@ import java.util.TimeZone
 
 class MyGoogleDriveAnime : AnimeHttpSource(), ConfigurableAnimeSource {
 
-    override val name = "My Google Drive"
+    override val name = "Google Drive"
     override val baseUrl = "https://drive.google.com"
     override val lang = "all"
     override val supportsLatest = false
