@@ -33,4 +33,3 @@ jobs:
         with:
           name: MyGoogleDrive-Anime-Extension
           path: src/all/mygoogledrive/build/outputs/apk/debug/*.apk
-
