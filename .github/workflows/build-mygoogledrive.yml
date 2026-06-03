@@ -22,6 +22,9 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      - name: Auto-Fix Code Formatting (Spotless)
+        run: ./gradlew :src:all:mygoogledrive:spotlessApply
+
       - name: Build APK
         run: ./gradlew :src:all:mygoogledrive:assembleDebug
 
