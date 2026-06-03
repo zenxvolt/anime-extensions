@@ -23,7 +23,9 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
-class MyGoogleDriveAnime : AnimeHttpSource(), ConfigurableAnimeSource {
+class MyGoogleDriveAnime :
+    AnimeHttpSource(),
+    ConfigurableAnimeSource {
 
     override val name = "Google Drive"
     override val baseUrl = "https://drive.google.com"
@@ -32,12 +34,12 @@ class MyGoogleDriveAnime : AnimeHttpSource(), ConfigurableAnimeSource {
 
     private val apiUrl = "https://www.googleapis.com/drive/v3/files"
 
-    // Endpoint field standar
     private val listFields = "nextPageToken,files(id,name)"
     private val episodeFields = "nextPageToken,files(id,name,modifiedTime,size)"
 
+    // Perbaikan SharedPreferences agar tidak bentrok dengan versi Manga
     private val preferences: SharedPreferences by lazy {
-        Injekt.get<Application>().getSharedPreferences("source_$id", 0x0000)
+        Injekt.get<Application>().getSharedPreferences("source_${id}_anime", 0x0000)
     }
 
     private val apiKey: String
@@ -75,10 +77,9 @@ class MyGoogleDriveAnime : AnimeHttpSource(), ConfigurableAnimeSource {
     private fun extractFolderId(path: String): String? =
         Regex("folders/([a-zA-Z0-9_-]+)").find(path)?.groupValues?.get(1)
 
-    private fun buildParentClauses(): List<String> =
-        pathList.split(";")
-            .filter { it.isNotBlank() }
-            .mapNotNull { path -> extractFolderId(path)?.let { "'$it' in parents" } }
+    private fun buildParentClauses(): List<String> = pathList.split(";")
+        .filter { it.isNotBlank() }
+        .mapNotNull { path -> extractFolderId(path)?.let { "'$it' in parents" } }
 
     private fun parseDate(dateStr: String?): Long {
         if (dateStr.isNullOrEmpty()) return 0L
@@ -91,11 +92,12 @@ class MyGoogleDriveAnime : AnimeHttpSource(), ConfigurableAnimeSource {
                 SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
                     .apply { timeZone = TimeZone.getTimeZone("UTC") }
                     .parse(dateStr)?.time ?: 0L
-            } catch (e2: Exception) { 0L }
+            } catch (e2: Exception) {
+                0L
+            }
         }
     }
 
-    // Helper natural sort untuk memastikan urutan episode akurat
     private fun naturalSortComparator(): Comparator<String> = Comparator { a, b ->
         val tokensA = tokenize(a)
         val tokensB = tokenize(b)
@@ -197,7 +199,7 @@ class MyGoogleDriveAnime : AnimeHttpSource(), ConfigurableAnimeSource {
             val file = files.getJSONObject(i)
             SAnime.create().apply {
                 title = file.getString("name")
-                url = file.getString("id") // URL diisi dengan Folder ID
+                url = file.getString("id")
                 thumbnail_url = null
             }
         }
@@ -266,7 +268,6 @@ class MyGoogleDriveAnime : AnimeHttpSource(), ConfigurableAnimeSource {
         val firstBatch = json.optJSONArray("files") ?: return emptyList()
         for (i in 0 until firstBatch.length()) allFiles.add(firstBatch.getJSONObject(i))
 
-        // Mengambil seluruh episode yang dipaginasi oleh API Drive
         var pageToken = json.optString("nextPageToken").takeIf { it.isNotEmpty() }
         while (pageToken != null) {
             val nextUrl = "$apiUrl?${currentEpisodeQuery}&pageSize=$PAGE_SIZE_LARGE&fields=$episodeFields&key=$apiKey&pageToken=${URLEncoder.encode(pageToken, "UTF-8")}"
@@ -284,17 +285,16 @@ class MyGoogleDriveAnime : AnimeHttpSource(), ConfigurableAnimeSource {
         return allFiles.mapIndexed { i, file ->
             SEpisode.create().apply {
                 name = file.getString("name")
-                url = file.getString("id") // File ID digunakan sebagai identifier video
+                url = file.getString("id")
                 episode_number = (i + 1).toFloat()
                 date_upload = parseDate(file.optString("modifiedTime"))
             }
-        }.reversed() // Aniyomi menampilkan episode terbaru (tertinggi) di urutan teratas
+        }.reversed()
     }
 
-    // ─── Video List (Standar Aniyomi) ────────────────────────────────────────
+    // ─── Video List ──────────────────────────────────────────────────────────
 
     override fun videoListRequest(episode: SEpisode): Request {
-        // Request sekadar untuk memicu parse (API Drive)
         return GET("$apiUrl/${episode.url}?fields=id,name&key=$apiKey", headers)
     }
 
@@ -304,15 +304,13 @@ class MyGoogleDriveAnime : AnimeHttpSource(), ConfigurableAnimeSource {
         val fileId = json.getString("id")
         val fileName = json.optString("name", "Unknown Quality")
         
-        // Membangun stream URL menggunakan parameter alt=media
         val videoUrl = "$apiUrl/$fileId?alt=media&key=$apiKey"
         
-        // Konstruktor standar kelas Video di Aniyomi
         return listOf(
             Video(
-                url = videoUrl, // URL Referensi
-                quality = "Direct Stream: $fileName", // Penamaan Kualitas
-                videoUrl = videoUrl, // URL Stream Asli untuk ExoPlayer
+                url = videoUrl,
+                quality = "Direct Stream: $fileName",
+                videoUrl = videoUrl,
                 headers = Headers.Builder()
                     .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                     .build()
@@ -334,4 +332,3 @@ class MyGoogleDriveAnime : AnimeHttpSource(), ConfigurableAnimeSource {
         private const val PAGE_SIZE_BROWSE = 50
     }
 }
-
