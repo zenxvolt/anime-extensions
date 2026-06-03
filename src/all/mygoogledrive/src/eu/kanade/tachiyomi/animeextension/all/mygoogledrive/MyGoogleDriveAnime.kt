@@ -37,9 +37,9 @@ class MyGoogleDriveAnime :
     private val listFields = "nextPageToken,files(id,name)"
     private val episodeFields = "nextPageToken,files(id,name,modifiedTime,size)"
 
-    // Perbaikan SharedPreferences agar tidak bentrok dengan versi Manga
+    // Menggunakan nama file default Aniyomi agar terbaca oleh UI Setting
     private val preferences: SharedPreferences by lazy {
-        Injekt.get<Application>().getSharedPreferences("source_${id}_anime", 0x0000)
+        Injekt.get<Application>().getSharedPreferences("source_$id", 0x0000)
     }
 
     private val apiKey: String
@@ -326,8 +326,9 @@ class MyGoogleDriveAnime :
     // ─── Constants ───────────────────────────────────────────────────────────
 
     companion object {
-        private const val API_KEY_PREF = "API_KEY_PREF"
-        private const val PATH_LIST_PREF = "PATH_LIST_PREF"
+        // [PERBAIKAN] Menggunakan nama key yang unik agar tidak menimpa file manga
+        private const val API_KEY_PREF = "API_KEY_PREF_ANIME"
+        private const val PATH_LIST_PREF = "PATH_LIST_PREF_ANIME"
         private const val PAGE_SIZE_LARGE = 1000
         private const val PAGE_SIZE_BROWSE = 50
     }
