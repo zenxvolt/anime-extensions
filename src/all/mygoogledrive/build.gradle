@@ -1,0 +1,12 @@
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+ext {
+    extName = 'My Google Drive Anime'
+    pkgNameSuffix = 'all.mygoogledrive'
+    extClass = '.MyGoogleDriveAnime'
+    extVersionCode = 1
+}
+
+apply from: "$rootDir/common.gradle"
+
