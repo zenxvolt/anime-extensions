@@ -51,7 +51,8 @@ class LocalStream : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
         val animes = document.select("a[href]")
-            .filter { it.text() != ".." && it.attr("href").endsWith("/") }
+            // PERBAIKAN: Memblokir tautan mundur (..) dengan ketat
+            .filter { !it.attr("href").contains("..") && it.attr("href").endsWith("/") }
             .map { element ->
                 SAnime.create().apply {
                     title = element.text().removeSuffix("/")
@@ -76,7 +77,8 @@ class LocalStream : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val query = response.request.url.fragment?.lowercase() ?: ""
         
         val animes = document.select("a[href]")
-            .filter { it.text() != ".." && it.attr("href").endsWith("/") }
+            // PERBAIKAN: Memblokir tautan mundur (..) dengan ketat
+            .filter { !it.attr("href").contains("..") && it.attr("href").endsWith("/") }
             .filter { it.text().lowercase().contains(query) }
             .map { element ->
                 SAnime.create().apply {
@@ -109,8 +111,8 @@ class LocalStream : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         return document.select("a[href]")
             .filter { element ->
                 val href = element.attr("href").lowercase()
-                val text = element.text()
-                text != ".." && (href.endsWith(".mp4") || href.endsWith(".mkv") || href.endsWith(".avi"))
+                // PERBAIKAN: Memastikan file video tidak memuat navigasi mundur
+                !href.contains("..") && (href.endsWith(".mp4") || href.endsWith(".mkv") || href.endsWith(".avi"))
             }
             .mapIndexed { index, element ->
                 SEpisode.create().apply {
@@ -155,4 +157,3 @@ class LocalStream : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         private const val BASE_URL_PREF = "BASE_URL_PREF_LOCALSTREAM"
     }
 }
-
