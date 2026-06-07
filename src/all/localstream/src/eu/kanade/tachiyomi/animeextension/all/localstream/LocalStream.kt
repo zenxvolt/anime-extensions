@@ -7,7 +7,6 @@ import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
-import eu.kanade.tachiyomi.animesource.model.FilterList
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
@@ -19,7 +18,8 @@ import okhttp3.Response
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
-class LocalStreamAnime : AnimeHttpSource(), ConfigurableAnimeSource {
+// KELAS DIUBAH KEMBALI MENJADI LocalStream AGAR COCOK DENGAN GRADLE/MANIFEST
+class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override val name = "LocalStream Anime"
     override val lang = "all"
