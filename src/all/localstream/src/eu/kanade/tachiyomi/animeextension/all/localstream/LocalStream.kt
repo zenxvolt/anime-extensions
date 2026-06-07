@@ -15,10 +15,12 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.Request
 import okhttp3.Response
+import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.util.Locale
 
-// KELAS DIUBAH KEMBALI MENJADI LocalStream AGAR COCOK DENGAN GRADLE/MANIFEST
 class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override val name = "LocalStream Anime"
@@ -75,6 +77,91 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
     private fun tokenize(s: String): List<String> =
         Regex("(\\d+|\\D+)").findAll(s).map { it.value }.toList()
 
+    // ─── Helpers: ComicInfo Metadata Parser ──────────────────────────────────
+
+    private fun getComicInfoXml(document: Document): String {
+        val links = document.select("a[href]")
+        
+        val comicInfoLink = links.find { it.attr("href").lowercase(Locale.ROOT).endsWith("comicinfo.xml") }
+        if (comicInfoLink != null) {
+            return downloadUrlContent(comicInfoLink.absUrl("href"))
+        }
+
+        val subFolder = links.find { !it.attr("href").contains("..") && it.attr("href").endsWith("/") }
+        if (subFolder != null) {
+            try {
+                val fixedSubUrl = subFolder.absUrl("href").replace("+", "%2B").replace(" ", "%20")
+                val subDoc = client.newCall(GET(fixedSubUrl, headers)).execute().asJsoup()
+                val subComicInfoLink = subDoc.select("a[href]").find { it.attr("href").lowercase(Locale.ROOT).endsWith("comicinfo.xml") }
+                if (subComicInfoLink != null) {
+                    return downloadUrlContent(subComicInfoLink.absUrl("href"))
+                }
+            } catch (e: Exception) { }
+        }
+        return ""
+    }
+
+    private fun downloadUrlContent(url: String): String {
+        return try {
+            val fixedUrl = url.replace("+", "%2B").replace(" ", "%20")
+            client.newCall(GET(fixedUrl, headers)).execute().body?.string() ?: ""
+        } catch (e: Exception) { "" }
+    }
+
+    private fun extractXmlTag(xml: String, tag: String): String? {
+        val regex = Regex(
+            "<(?:\\w+:)?$tag(?:\\s+[^>]*)?>(.*?)</(?:\\w+:)?$tag>",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        )
+        return regex.find(xml)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
+    }
+
+    private fun parseComicInfo(xml: String, anime: SAnime) {
+        val series = extractXmlTag(xml, "Series")
+        val summary = extractXmlTag(xml, "Summary")
+            ?.replace("&amp;", "&")
+            ?.replace("&lt;", "<")
+            ?.replace("&gt;", ">")
+            ?.replace("&quot;", "\"")
+            ?.replace("&apos;", "'")
+
+        val writer = extractXmlTag(xml, "Writer")
+        val penciller = extractXmlTag(xml, "Penciller")
+        val publisher = extractXmlTag(xml, "Publisher")
+        val statusStr = extractXmlTag(xml, "PublishingStatusTachiyomi") ?: extractXmlTag(xml, "Status")
+        val genre = extractXmlTag(xml, "Genre")
+        val categories = extractXmlTag(xml, "Categories")
+
+        if (!series.isNullOrBlank()) {
+            anime.title = series
+        }
+        if (!summary.isNullOrBlank()) {
+            anime.description = summary
+        }
+
+        val authorsList = listOfNotNull(writer, penciller, publisher).distinct()
+        anime.author = authorsList.joinToString(" | ").takeIf { it.isNotBlank() } ?: "Unknown"
+        anime.artist = penciller ?: writer ?: "Unknown"
+
+        val allGenres = listOfNotNull(genre, categories)
+            .flatMap { it.split(",") }
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        if (allGenres.isNotEmpty()) {
+            anime.genre = allGenres.joinToString(", ")
+        }
+
+        anime.status = when (statusStr?.lowercase(Locale.ROOT)) {
+            "ongoing", "1" -> SAnime.ONGOING
+            "completed", "end", "2" -> SAnime.COMPLETED
+            "cancelled", "abandoned", "6" -> SAnime.CANCELLED
+            "hiatus" -> SAnime.ON_HIATUS
+            else -> SAnime.UNKNOWN
+        }
+    }
+
     // ─── Browse / Popular Anime ──────────────────────────────────────────────
 
     override fun popularAnimeRequest(page: Int): Request = GET("$baseUrl/#page=$page", headers)
@@ -118,19 +205,19 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
     // ─── Search Anime ────────────────────────────────────────────────────────
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        return GET("$baseUrl/#query=${query.lowercase()}&page=$page", headers)
+        return GET("$baseUrl/#query=${query.lowercase(Locale.ROOT)}&page=$page", headers)
     }
 
     override fun searchAnimeParse(response: Response): AnimesPage {
         val fragment = response.request.url.fragment ?: ""
-        val query = fragment.substringAfter("query=").substringBefore("&page=").lowercase()
+        val query = fragment.substringAfter("query=").substringBefore("&page=").lowercase(Locale.ROOT)
         val currentPage = fragment.substringAfter("page=").toIntOrNull() ?: 1
         val itemsPerPage = 24
 
         val document = response.asJsoup()
         val filteredElements = document.select("a[href]")
             .filter { !it.attr("href").contains("..") && it.attr("href").endsWith("/") }
-            .filter { it.text().lowercase().contains(query) }
+            .filter { it.text().lowercase(Locale.ROOT).contains(query) }
 
         val startIndex = (currentPage - 1) * itemsPerPage
         val endIndex = minOf(startIndex + itemsPerPage, filteredElements.size)
@@ -165,17 +252,17 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         val document = response.asJsoup()
         val links = document.select("a[href]")
         val imageLinks = links.filter { 
-            val href = it.attr("href").lowercase()
+            val href = it.attr("href").lowercase(Locale.ROOT)
             !href.contains("..") && (href.endsWith(".jpg") || href.endsWith(".jpeg") || 
                                      href.endsWith(".png") || href.endsWith(".webp"))
         }
 
         val coverElement = imageLinks.find { 
-            val href = it.attr("href").lowercase()
+            val href = it.attr("href").lowercase(Locale.ROOT)
             href.contains("cover") || href.contains("poster") || href.contains("thumb")
         } ?: imageLinks.firstOrNull()
 
-        return SAnime.create().apply {
+        val anime = SAnime.create().apply {
             description = "Folder anime lokal dari Server LocalStream (WebDAV/HTTP)."
             status = SAnime.UNKNOWN
             if (coverElement != null) {
@@ -184,6 +271,14 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
             }
             initialized = true
         }
+
+        // Ambil dan pasang metadata dari ComicInfo.xml jika tersedia
+        val comicInfoXml = getComicInfoXml(document)
+        if (comicInfoXml.isNotBlank()) {
+            parseComicInfo(comicInfoXml, anime)
+        }
+
+        return anime
     }
 
     // ─── Episode List ────────────────────────────────────────────────────────
@@ -195,7 +290,7 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         
         val episodeElements = document.select("a[href]")
             .filter { element ->
-                val href = element.attr("href").lowercase()
+                val href = element.attr("href").lowercase(Locale.ROOT)
                 val isVideo = href.endsWith(".mp4") || href.endsWith(".mkv") || 
                               href.endsWith(".webm") || href.endsWith(".avi")
                 !href.contains("..") && (href.endsWith("/") || isVideo)
@@ -229,7 +324,7 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         val url = response.request.url.toString()
         val fixedUrl = url.replace("+", "%2B").replace(" ", "%20")
         
-        val isDirectVideo = url.lowercase().run {
+        val isDirectVideo = url.lowercase(Locale.ROOT).run {
             endsWith(".mp4") || endsWith(".mkv") || endsWith(".webm") || endsWith(".avi")
         }
         if (isDirectVideo) {
@@ -239,7 +334,7 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         val document = response.asJsoup()
         val videoElements = document.select("a[href]")
             .filter { element ->
-                val href = element.attr("href").lowercase()
+                val href = element.attr("href").lowercase(Locale.ROOT)
                 val isVideo = href.endsWith(".mp4") || href.endsWith(".mkv") || 
                               href.endsWith(".webm") || href.endsWith(".avi")
                 !href.contains("..") && isVideo
