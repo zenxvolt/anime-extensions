@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.animeextension.all.localstreamanime
+package eu.kanade.tachiyomi.animeextension.all.localstream
 
 import android.app.Application
 import android.content.SharedPreferences
@@ -193,7 +193,6 @@ class LocalStreamAnime : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override fun episodeListParse(response: Response): List<SEpisode> {
         val document = response.asJsoup()
         
-        // Membaca subfolder episode ATAU file video langsung di dalam folder utama anime
         val episodeElements = document.select("a[href]")
             .filter { element ->
                 val href = element.attr("href").lowercase()
@@ -230,7 +229,6 @@ class LocalStreamAnime : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val url = response.request.url.toString()
         val fixedUrl = url.replace("+", "%2B").replace(" ", "%20")
         
-        // JALUR 1: Jika tautan episode langsung berupa file video
         val isDirectVideo = url.lowercase().run {
             endsWith(".mp4") || endsWith(".mkv") || endsWith(".webm") || endsWith(".avi")
         }
@@ -238,7 +236,6 @@ class LocalStreamAnime : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
             return listOf(Video(fixedUrl, "Original Quality (Lokal)", fixedUrl))
         }
 
-        // JALUR 2: Jika episode berupa folder berisi file video di dalamnya
         val document = response.asJsoup()
         val videoElements = document.select("a[href]")
             .filter { element ->
