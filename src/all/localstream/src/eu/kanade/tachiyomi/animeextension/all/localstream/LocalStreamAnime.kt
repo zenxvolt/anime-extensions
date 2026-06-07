@@ -5,22 +5,21 @@ import android.content.SharedPreferences
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.FilterList
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
-import eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.Request
 import okhttp3.Response
-import org.jsoup.nodes.Document
-import org.jsoup.nodes.Element
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
-class LocalStreamAnime : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
+class LocalStreamAnime : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override val name = "LocalStream Anime"
     override val lang = "all"
@@ -118,7 +117,7 @@ class LocalStreamAnime : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // ─── Search Anime ────────────────────────────────────────────────────────
 
-    override fun searchAnimeRequest(page: Int, query: String, filters: FilterList): Request {
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         return GET("$baseUrl/#query=${query.lowercase()}&page=$page", headers)
     }
 
@@ -162,7 +161,8 @@ class LocalStreamAnime : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // ─── Anime Details ───────────────────────────────────────────────────────
 
-    override fun animeDetailsParse(document: Document): SAnime {
+    override fun animeDetailsParse(response: Response): SAnime {
+        val document = response.asJsoup()
         val links = document.select("a[href]")
         val imageLinks = links.filter { 
             val href = it.attr("href").lowercase()
@@ -221,7 +221,7 @@ class LocalStreamAnime : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         }.reversed()
     }
 
-    // ─── Video List (Page List) ──────────────────────────────────────────────
+    // ─── Video List ──────────────────────────────────────────────────────────
 
     override fun videoListRequest(episode: SEpisode): Request = GET(baseUrl + episode.url, headers)
 
@@ -257,22 +257,11 @@ class LocalStreamAnime : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         }
     }
 
-    // ─── Abstract Methods ────────────────────────────────────────────────────
-    override fun popularAnimeSelector(): String = ""
-    override fun popularAnimeFromElement(element: Element): SAnime = SAnime.create()
-    override fun popularAnimeNextPageSelector(): String? = null
-    override fun searchAnimeSelector(): String = ""
-    override fun searchAnimeFromElement(element: Element): SAnime = SAnime.create()
-    override fun searchAnimeNextPageSelector(): String? = null
-    override fun episodeFromElement(element: Element): SEpisode = SEpisode.create()
-    override fun episodeListSelector(): String = ""
-    override fun videoUrlParse(document: Document): String = ""
-    override fun videoListParse(document: Document): List<Video> = throw UnsupportedOperationException("Not used")
-    override fun latestUpdatesRequest(page: Int): Request = throw UnsupportedOperationException("Not used")
-    override fun latestUpdatesSelector(): String = ""
-    override fun latestUpdatesFromElement(element: Element): SAnime = SAnime.create()
-    override fun latestUpdatesNextPageSelector(): String? = null
+    // ─── Unused Abstract Methods ─────────────────────────────────────────────
 
+    override fun latestUpdatesRequest(page: Int): Request = throw UnsupportedOperationException("Not used")
+    override fun latestUpdatesParse(response: Response): AnimesPage = throw UnsupportedOperationException("Not used")
+    
     companion object {
         private const val BASE_URL_PREF = "BASE_URL_PREF_LOCALSTREAM_ANIME"
         private const val COVER_NAME_PREF = "COVER_NAME_PREF_LOCALSTREAM_ANIME"
