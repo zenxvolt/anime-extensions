@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
@@ -37,6 +38,36 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
     private val defaultCoverName: String
         get() = preferences.getString(COVER_NAME_PREF, "cover.jpg") ?: "cover.jpg"
 
+    // ─── FIX: Dynamic Cover Fallback Interceptor ─────────────────────────────
+    override val client: OkHttpClient = network.client.newBuilder()
+        .addInterceptor { chain ->
+            val originalRequest = chain.request()
+            var response = chain.proceed(originalRequest)
+            
+            val urlString = originalRequest.url.toString()
+            val coverBase = defaultCoverName.substringBeforeLast(".").trim()
+            
+            if (response.code == 404 && urlString.contains("/$coverBase.", ignoreCase = true)) {
+                val extensions = listOf("jpg", "jpeg", "png", "webp", "avif")
+                val currentExt = urlString.substringAfterLast(".").lowercase(Locale.ROOT)
+                
+                for (ext in extensions) {
+                    if (ext == currentExt) continue
+                    response.close()
+                    
+                    val newUrl = urlString.substringBeforeLast(".") + "." + ext
+                    val newRequest = originalRequest.newBuilder().url(newUrl).build()
+                    response = chain.proceed(newRequest)
+                    
+                    if (response.isSuccessful) {
+                        break
+                    }
+                }
+            }
+            response
+        }
+        .build()
+
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         val baseUrlPref = EditTextPreference(screen.context).apply {
             key = BASE_URL_PREF
@@ -49,7 +80,7 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         val coverNamePref = EditTextPreference(screen.context).apply {
             key = COVER_NAME_PREF
             title = "Nama File Cover Default"
-            summary = "Harus SAMA PERSIS dengan nama file di dalam folder (case-sensitive)."
+            summary = "Nama dasar cover (Contoh: cover.jpg). Jika format berbeda (.png/.webp), sistem otomatis mendeteksinya."
             setDefaultValue("cover.jpg")
         }
         screen.addPreference(coverNamePref)
@@ -272,7 +303,6 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
             initialized = true
         }
 
-        // Ambil dan pasang metadata dari ComicInfo.xml jika tersedia
         val comicInfoXml = getComicInfoXml(document)
         if (comicInfoXml.isNotBlank()) {
             parseComicInfo(comicInfoXml, anime)
@@ -351,8 +381,6 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
             Video(validUrl, element.text(), validUrl)
         }
     }
-
-    // ─── Unused Abstract Methods ─────────────────────────────────────────────
 
     override fun latestUpdatesRequest(page: Int): Request = throw UnsupportedOperationException("Not used")
     override fun latestUpdatesParse(response: Response): AnimesPage = throw UnsupportedOperationException("Not used")
