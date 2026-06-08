@@ -108,40 +108,24 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
     private fun tokenize(s: String): List<String> =
         Regex("(\\d+|\\D+)").findAll(s).map { it.value }.toList()
 
-    // ─── Helpers: Strict URL Sanitizer ───────────────────────────────────────
-
-    private fun sanitizeSegment(segment: String): String {
-        return segment
-            .replace("%", "%25")
-            .replace(" ", "%20")
-            .replace("+", "%2B")
-            .replace("[", "%5B")
-            .replace("]", "%5D")
-            .replace("_", "%5F")
-    }
-
     // ─── Helpers: ComicInfo Metadata Parser ──────────────────────────────────
 
     private fun getComicInfoXml(document: Document): String {
         val links = document.select("a[href]")
-        val comicInfoLink = links.find { it.text().lowercase(Locale.ROOT).trim().removeSuffix("/") == "comicinfo.xml" }
         
+        val comicInfoLink = links.find { it.attr("href").lowercase(Locale.ROOT).endsWith("comicinfo.xml") }
         if (comicInfoLink != null) {
-            val currentFolderUrl = document.location().removeSuffix("/")
-            return downloadUrlContent("$currentFolderUrl/comicinfo.xml")
+            return downloadUrlContent(comicInfoLink.absUrl("href"))
         }
 
-        val subFolder = links.find { !it.attr("href").contains("..") && (it.attr("href").endsWith("/") || it.text().endsWith("/")) }
+        val subFolder = links.find { !it.attr("href").contains("..") && it.attr("href").endsWith("/") }
         if (subFolder != null) {
             try {
-                val subFolderName = subFolder.text().removeSuffix("/")
-                val currentFolderUrl = document.location().removeSuffix("/")
-                val fixedSubUrl = "$currentFolderUrl/${sanitizeSegment(subFolderName)}/"
-                
+                val fixedSubUrl = subFolder.absUrl("href").replace("+", "%2B").replace(" ", "%20")
                 val subDoc = client.newCall(GET(fixedSubUrl, headers)).execute().asJsoup()
-                val subComicInfoLink = subDoc.select("a[href]").find { it.text().lowercase(Locale.ROOT).trim().removeSuffix("/") == "comicinfo.xml" }
+                val subComicInfoLink = subDoc.select("a[href]").find { it.attr("href").lowercase(Locale.ROOT).endsWith("comicinfo.xml") }
                 if (subComicInfoLink != null) {
-                    return downloadUrlContent("$fixedSubUrl/comicinfo.xml")
+                    return downloadUrlContent(subComicInfoLink.absUrl("href"))
                 }
             } catch (e: Exception) { }
         }
@@ -150,7 +134,8 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
     private fun downloadUrlContent(url: String): String {
         return try {
-            client.newCall(GET(url, headers)).execute().body?.string() ?: ""
+            val fixedUrl = url.replace("+", "%2B").replace(" ", "%20")
+            client.newCall(GET(fixedUrl, headers)).execute().body?.string() ?: ""
         } catch (e: Exception) { "" }
     }
 
@@ -178,8 +163,12 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         val genre = extractXmlTag(xml, "Genre")
         val categories = extractXmlTag(xml, "Categories")
 
-        if (!series.isNullOrBlank()) anime.title = series
-        if (!summary.isNullOrBlank()) anime.description = summary
+        if (!series.isNullOrBlank()) {
+            anime.title = series
+        }
+        if (!summary.isNullOrBlank()) {
+            anime.description = summary
+        }
 
         val authorsList = listOfNotNull(writer, penciller, publisher).distinct()
         anime.author = authorsList.joinToString(" | ").takeIf { it.isNotBlank() } ?: "Unknown"
@@ -191,7 +180,9 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
             .filter { it.isNotBlank() }
             .distinct()
 
-        if (allGenres.isNotEmpty()) anime.genre = allGenres.joinToString(", ")
+        if (allGenres.isNotEmpty()) {
+            anime.genre = allGenres.joinToString(", ")
+        }
 
         anime.status = when (statusStr?.lowercase(Locale.ROOT)) {
             "ongoing", "1" -> SAnime.ONGOING
@@ -213,8 +204,7 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
         val document = response.asJsoup()
         val allElements = document.select("a[href]")
-            .filter { !it.attr("href").contains("..") }
-            .filter { it.attr("href").endsWith("/") || it.text().endsWith("/") }
+            .filter { !it.attr("href").contains("..") && it.attr("href").endsWith("/") }
 
         val startIndex = (currentPage - 1) * itemsPerPage
         val endIndex = minOf(startIndex + itemsPerPage, allElements.size)
@@ -226,15 +216,16 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         val pagedElements = allElements.subList(startIndex, endIndex)
         val animes = pagedElements.map { element ->
             SAnime.create().apply {
-                val folderName = element.text().removeSuffix("/")
-                title = folderName
+                title = element.text().removeSuffix("/")
+                val absUrl = element.absUrl("href")
+                val fixedAbsUrl = absUrl.replace("+", "%2B").replace(" ", "%20")
                 
-                val fixedAbsUrl = "$baseUrl/${sanitizeSegment(folderName)}/"
                 var relUrl = fixedAbsUrl.removePrefix(baseUrl)
                 if (!relUrl.startsWith("/")) relUrl = "/$relUrl"
                 url = relUrl
                 
-                thumbnail_url = "$fixedAbsUrl${defaultCoverName.trim()}"
+                val cleanAbsUrl = fixedAbsUrl.removeSuffix("/")
+                thumbnail_url = "$cleanAbsUrl/${defaultCoverName.trim()}"
             }
         }
 
@@ -250,14 +241,13 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override fun searchAnimeParse(response: Response): AnimesPage {
         val fragment = response.request.url.fragment ?: ""
-        val query = fragment.substringAfter("query=").substringBefore("&page=").lowercase(Locale.ROOT).trim()
+        val query = fragment.substringAfter("query=").substringBefore("&page=").lowercase(Locale.ROOT)
         val currentPage = fragment.substringAfter("page=").toIntOrNull() ?: 1
         val itemsPerPage = 24
 
         val document = response.asJsoup()
         val filteredElements = document.select("a[href]")
-            .filter { !it.attr("href").contains("..") }
-            .filter { it.attr("href").endsWith("/") || it.text().endsWith("/") }
+            .filter { !it.attr("href").contains("..") && it.attr("href").endsWith("/") }
             .filter { it.text().lowercase(Locale.ROOT).contains(query) }
 
         val startIndex = (currentPage - 1) * itemsPerPage
@@ -270,15 +260,16 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         val pagedElements = filteredElements.subList(startIndex, endIndex)
         val animes = pagedElements.map { element ->
             SAnime.create().apply {
-                val folderName = element.text().removeSuffix("/")
-                title = folderName
+                title = element.text().removeSuffix("/")
+                val absUrl = element.absUrl("href")
+                val fixedAbsUrl = absUrl.replace("+", "%2B").replace(" ", "%20")
                 
-                val fixedAbsUrl = "$baseUrl/${sanitizeSegment(folderName)}/"
                 var relUrl = fixedAbsUrl.removePrefix(baseUrl)
                 if (!relUrl.startsWith("/")) relUrl = "/$relUrl"
                 url = relUrl
                 
-                thumbnail_url = "$fixedAbsUrl${defaultCoverName.trim()}"
+                val cleanAbsUrl = fixedAbsUrl.removeSuffix("/")
+                thumbnail_url = "$cleanAbsUrl/${defaultCoverName.trim()}"
             }
         }
 
@@ -290,27 +281,24 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
-        val currentFolderUrl = response.request.url.toString().removeSuffix("/")
-        
         val links = document.select("a[href]")
         val imageLinks = links.filter { 
-            val name = it.text().lowercase(Locale.ROOT)
-            name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp")
+            val href = it.attr("href").lowercase(Locale.ROOT)
+            !href.contains("..") && (href.endsWith(".jpg") || href.endsWith(".jpeg") || 
+                                     href.endsWith(".png") || href.endsWith(".webp"))
         }
 
         val coverElement = imageLinks.find { 
-            val name = it.text().lowercase(Locale.ROOT)
-            name.contains("cover") || name.contains("poster") || name.contains("thumb")
+            val href = it.attr("href").lowercase(Locale.ROOT)
+            href.contains("cover") || href.contains("poster") || href.contains("thumb")
         } ?: imageLinks.firstOrNull()
 
         val anime = SAnime.create().apply {
             description = "Folder anime lokal dari Server LocalStream (WebDAV/HTTP)."
             status = SAnime.UNKNOWN
             if (coverElement != null) {
-                val fileName = coverElement.text()
-                thumbnail_url = "$currentFolderUrl/${sanitizeSegment(fileName)}"
-            } else {
-                thumbnail_url = "$currentFolderUrl/${defaultCoverName.trim()}"
+                val absUrl = coverElement.absUrl("href")
+                thumbnail_url = absUrl.replace("+", "%2B").replace(" ", "%20")
             }
             initialized = true
         }
@@ -329,15 +317,13 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override fun episodeListParse(response: Response): List<SEpisode> {
         val document = response.asJsoup()
-        val currentFolderUrl = response.request.url.toString().removeSuffix("/")
         
         val episodeElements = document.select("a[href]")
             .filter { element ->
-                val name = element.text().lowercase(Locale.ROOT)
-                val isVideo = name.endsWith(".mp4") || name.endsWith(".mkv") || 
-                              name.endsWith(".webm") || name.endsWith(".avi")
-                !element.attr("href").contains("..") && 
-                (element.attr("href").endsWith("/") || element.text().endsWith("/") || isVideo)
+                val href = element.attr("href").lowercase(Locale.ROOT)
+                val isVideo = href.endsWith(".mp4") || href.endsWith(".mkv") || 
+                              href.endsWith(".webm") || href.endsWith(".avi")
+                !href.contains("..") && (href.endsWith("/") || isVideo)
             }
 
         val comparator = naturalSortComparator()
@@ -347,12 +333,10 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
         return sortedElements.mapIndexed { index, element ->
             SEpisode.create().apply {
-                val episodeName = element.text().removeSuffix("/")
-                name = episodeName
+                name = element.text().removeSuffix("/")
+                val absUrl = element.absUrl("href")
                 
-                val isFolder = element.attr("href").endsWith("/") || element.text().endsWith("/")
-                val fixedAbsUrl = "$currentFolderUrl/${sanitizeSegment(episodeName)}${if (isFolder) "/" else ""}"
-                
+                val fixedAbsUrl = absUrl.replace("+", "%2B").replace(" ", "%20")
                 var relUrl = fixedAbsUrl.removePrefix(baseUrl)
                 if (!relUrl.startsWith("/")) relUrl = "/$relUrl"
                 url = relUrl
@@ -368,22 +352,22 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override fun videoListParse(response: Response): List<Video> {
         val url = response.request.url.toString()
+        val fixedUrl = url.replace("+", "%2B").replace(" ", "%20")
         
         val isDirectVideo = url.lowercase(Locale.ROOT).run {
             endsWith(".mp4") || endsWith(".mkv") || endsWith(".webm") || endsWith(".avi")
         }
         if (isDirectVideo) {
-            return listOf(Video(url, "Original Quality (Lokal)", url))
+            return listOf(Video(fixedUrl, "Original Quality (Lokal)", fixedUrl))
         }
 
         val document = response.asJsoup()
-        val currentFolderUrl = url.removeSuffix("/")
-        
         val videoElements = document.select("a[href]")
             .filter { element ->
-                val name = element.text().lowercase(Locale.ROOT)
-                !element.attr("href").contains("..") && 
-                (name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".webm") || name.endsWith(".avi"))
+                val href = element.attr("href").lowercase(Locale.ROOT)
+                val isVideo = href.endsWith(".mp4") || href.endsWith(".mkv") || 
+                              href.endsWith(".webm") || href.endsWith(".avi")
+                !href.contains("..") && isVideo
             }
 
         val comparator = naturalSortComparator()
@@ -392,11 +376,13 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         }
 
         return sortedVideos.map { element ->
-            val fileName = element.text()
-            val validUrl = "$currentFolderUrl/${sanitizeSegment(fileName)}"
-            Video(validUrl, fileName, validUrl)
+            val absUrl = element.absUrl("href")
+            val validUrl = absUrl.replace("+", "%2B").replace(" ", "%20")
+            Video(validUrl, element.text(), validUrl)
         }
     }
+
+    // ─── Unused Abstract Methods ─────────────────────────────────────────────
 
     override fun latestUpdatesRequest(page: Int): Request = throw UnsupportedOperationException("Not used")
     override fun latestUpdatesParse(response: Response): AnimesPage = throw UnsupportedOperationException("Not used")
