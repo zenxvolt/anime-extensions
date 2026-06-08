@@ -38,7 +38,7 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
     private val defaultCoverName: String
         get() = preferences.getString(COVER_NAME_PREF, "cover.jpg") ?: "cover.jpg"
 
-    // ─── FIX: Dynamic Cover Fallback Interceptor ─────────────────────────────
+    // ─── Dynamic Cover Fallback Interceptor ──────────────────────────────────
     override val client: OkHttpClient = network.client.newBuilder()
         .addInterceptor { chain ->
             val originalRequest = chain.request()
@@ -240,7 +240,8 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
     }
 
     override fun searchAnimeParse(response: Response): AnimesPage {
-        val fragment = response.request.url.fragment ?Anime        val query = fragment.substringAfter("query=").substringBefore("&page=").lowercase(Locale.ROOT)
+        val fragment = response.request.url.fragment ?: ""
+        val query = fragment.substringAfter("query=").substringBefore("&page=").lowercase(Locale.ROOT)
         val currentPage = fragment.substringAfter("page=").toIntOrNull() ?: 1
         val itemsPerPage = 24
 
@@ -380,6 +381,8 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
             Video(validUrl, element.text(), validUrl)
         }
     }
+
+    // ─── Unused Abstract Methods ─────────────────────────────────────────────
 
     override fun latestUpdatesRequest(page: Int): Request = throw UnsupportedOperationException("Not used")
     override fun latestUpdatesParse(response: Response): AnimesPage = throw UnsupportedOperationException("Not used")
