@@ -24,7 +24,7 @@ import java.util.Locale
 
 class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
-    override val name = "LocalStream Anime"
+    override val name = "LocalStream"
     override val lang = "all"
     override val supportsLatest = false
 
@@ -240,8 +240,7 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
     }
 
     override fun searchAnimeParse(response: Response): AnimesPage {
-        val fragment = response.request.url.fragment ?: ""
-        val query = fragment.substringAfter("query=").substringBefore("&page=").lowercase(Locale.ROOT)
+        val fragment = response.request.url.fragment ?Anime        val query = fragment.substringAfter("query=").substringBefore("&page=").lowercase(Locale.ROOT)
         val currentPage = fragment.substringAfter("page=").toIntOrNull() ?: 1
         val itemsPerPage = 24
 
