@@ -33,7 +33,6 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         Injekt.get<Application>().getSharedPreferences("source_$id", 0x0000)
     }
 
-    // Pastikan base URL selalu BERSIH tanpa trailing slash ganda
     override val baseUrl: String
         get() = preferences.getString(BASE_URL_PREF, "http://127.0.0.1:8080")?.trimEnd('/') ?: "http://127.0.0.1:8080"
 
@@ -82,10 +81,27 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         val coverNamePref = EditTextPreference(screen.context).apply {
             key = COVER_NAME_PREF
             title = "Nama File Cover Default"
-            summary = "Nama dasar cover (Contoh: cover.jpg). Jika format berbeda (.png/.webp), sistem otomatis mendeteksinya."
+            summary = "Nama dasar cover (Contoh: cover.jpg). Jika format berbeda (.png/.webp), otomatis dideteksi."
             setDefaultValue("cover.jpg")
         }
         screen.addPreference(coverNamePref)
+    }
+
+    // ─── Helpers: Text Cleaner (Perbaikan &amp;) ─────────────────────────────
+    
+    /**
+     * Membersihkan nama dari kode HTML (seperti &amp;) yang dihasilkan server
+     * dan menghapus garis miring di akhir judul.
+     */
+    private fun String.cleanTitle(): String {
+        return this.trim()
+            .removeSuffix("/")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            .replace("&#39;", "'")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
     }
 
     // ─── Helpers: URL Sanitizer ──────────────────────────────────────────────
@@ -106,7 +122,7 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         }
     }
 
-    // ─── Hierarchy Validation (Pencegah Breadcrumb & Folder Kosong) ──────────
+    // ─── Hierarchy Validation ────────────────────────────────────────────────
 
     private fun getValidChildElements(
         document: Document, 
@@ -199,12 +215,7 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
     private fun parseComicInfo(xml: String, anime: SAnime) {
         val series = extractXmlTag(xml, "Series")
-        val summary = extractXmlTag(xml, "Summary")
-            ?.replace("&amp;", "&")
-            ?.replace("&lt;", "<")
-            ?.replace("&gt;", ">")
-            ?.replace("&quot;", "\"")
-            ?.replace("&apos;", "'")
+        val summary = extractXmlTag(xml, "Summary")?.cleanTitle()
 
         val writer = extractXmlTag(xml, "Writer")
         val penciller = extractXmlTag(xml, "Penciller")
@@ -214,7 +225,7 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         val categories = extractXmlTag(xml, "Categories")
 
         if (!series.isNullOrBlank()) {
-            anime.title = series
+            anime.title = series.cleanTitle()
         }
         if (!summary.isNullOrBlank()) {
             anime.description = summary
@@ -265,7 +276,8 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         val pagedElements = allElements.subList(startIndex, endIndex)
         val animes = pagedElements.map { element ->
             SAnime.create().apply {
-                title = element.text().trim().removeSuffix("/")
+                // TERINTEGRASI: Membersihkan judul
+                title = element.text().cleanTitle()
                 
                 val fixedAbsUrl = getSafeAbsoluteUrl(element)
                 val relPath = fixedAbsUrl.removePrefix(baseUrl)
@@ -294,7 +306,7 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
         val document = response.asJsoup()
         val filteredElements = getValidChildElements(document) { it.endsWith("/") }
-            .filter { it.text().lowercase(Locale.ROOT).contains(query) }
+            .filter { it.text().cleanTitle().lowercase(Locale.ROOT).contains(query) }
 
         val startIndex = (currentPage - 1) * itemsPerPage
         val endIndex = minOf(startIndex + itemsPerPage, filteredElements.size)
@@ -306,7 +318,8 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
         val pagedElements = filteredElements.subList(startIndex, endIndex)
         val animes = pagedElements.map { element ->
             SAnime.create().apply {
-                title = element.text().trim().removeSuffix("/")
+                // TERINTEGRASI: Membersihkan judul
+                title = element.text().cleanTitle()
                 
                 val fixedAbsUrl = getSafeAbsoluteUrl(element)
                 val relPath = fixedAbsUrl.removePrefix(baseUrl)
@@ -370,7 +383,8 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
         return sortedElements.mapIndexed { index, element ->
             SEpisode.create().apply {
-                name = element.text().trim().removeSuffix("/")
+                // TERINTEGRASI: Membersihkan nama episode
+                name = element.text().cleanTitle()
                 
                 val fixedAbsUrl = getSafeAbsoluteUrl(element)
                 val relPath = fixedAbsUrl.removePrefix(baseUrl)
@@ -410,7 +424,8 @@ class LocalStream : AnimeHttpSource(), ConfigurableAnimeSource {
 
         return sortedVideos.map { element ->
             val validUrl = getSafeAbsoluteUrl(element)
-            Video(validUrl, element.text().trim(), validUrl)
+            // TERINTEGRASI: Membersihkan nama sumber video
+            Video(validUrl, element.text().cleanTitle(), validUrl)
         }
     }
 
